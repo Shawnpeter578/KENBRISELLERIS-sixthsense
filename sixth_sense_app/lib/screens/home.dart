@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:sixth_sense_app/screens/homescreen.dart';
 import 'package:sixth_sense_app/screens/login_page.dart';
 import 'package:sixth_sense_app/services/auth_service.dart';
 import 'package:sixth_sense_app/theme/auth_theme.dart';
@@ -41,12 +42,7 @@ class _HomeState extends State<Home>{
           ),
         ],
       ),
-      body: const Center(
-        child: Text(
-          "You're logged in.",
-          style: TextStyle(fontSize: 16, color: AuthColors.textSecondary),
-        ),
-      ),
+      body:HomeScreen()
     );
   }
 }
