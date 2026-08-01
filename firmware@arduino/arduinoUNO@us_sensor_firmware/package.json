@@ -1,0 +1,11 @@
+{
+  "name": "firmware@arduino",
+  "version": "1.0.0",
+  "scripts": {
+    "arduino:compile": "arduino-cli compile --fqbn arduino:avr:uno --build-path ./build",
+    "arduino:upload": "arduino-cli upload -p /dev/ttyACM0 --fqbn arduino:avr:uno --build-path ./build",
+    "arduino:all": "pnpm run arduino:compile && pnpm run arduino:upload",
+    "arduino:monitor": "arduino-cli monitor -p /dev/ttyACM0",
+    "arduino:clean": "rm -rf ./build"
+  }
+}

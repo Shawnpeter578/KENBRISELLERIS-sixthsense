@@ -1,0 +1,8 @@
+default_profile: default
+profiles:
+  default:
+    fqbn: esp8266:esp8266:nodemcuv2
+    platforms:
+      - platform: esp8266:esp8266
+    source_paths:
+      - src

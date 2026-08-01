@@ -1,0 +1,18 @@
+# sketch.yaml
+default_profile: default
+profiles:
+  default:
+    fqbn: arduino:avr:uno
+    platforms:
+      - platform: arduino:avr (1.8.8)
+    libraries:
+      - Servo (1.1.8)
+    # Custom build flags
+    build_flags:
+      - -DDEBUG
+    # Override source paths
+    source_paths:
+      - src
+    # Allow C++ files
+    build_properties:
+      build.extra_flags: -std=gnu++17
