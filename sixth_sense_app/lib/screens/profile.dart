@@ -12,6 +12,7 @@ class AppColors {
   static const textMuted = Color(0xFF8A8F99);
   static const divider = Color(0xFFEEF1F6);
   static const danger = Color(0xFFE5484D);
+  static const dangerLight = Color(0xFFFBEAEA);
 }
 
 class ProfileScreen extends StatefulWidget {
@@ -53,7 +54,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Scaffold(
             backgroundColor: AppColors.bg,
-            body: Center(child: CircularProgressIndicator(color: AppColors.primary)),
+            body: Center(
+              child: CircularProgressIndicator(
+                color: AppColors.primary,
+                strokeWidth: 2.5,
+              ),
+            ),
           );
         }
 
@@ -69,11 +75,41 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Icon(Icons.error_outline_rounded, color: AppColors.danger, size: 40),
-                    const SizedBox(height: 12),
-                    Text(error ?? 'Profile could not be loaded.', textAlign: TextAlign.center),
+                    Container(
+                      width: 56,
+                      height: 56,
+                      decoration: BoxDecoration(
+                        color: AppColors.dangerLight,
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(Icons.error_outline_rounded,
+                          color: AppColors.danger, size: 28),
+                    ),
                     const SizedBox(height: 16),
-                    ElevatedButton(onPressed: _reload, child: const Text('Retry')),
+                    Text(
+                      error ?? 'Profile could not be loaded.',
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        color: AppColors.textMuted,
+                        fontSize: 14,
+                        height: 1.4,
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    ElevatedButton(
+                      onPressed: _reload,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.primary,
+                        foregroundColor: Colors.white,
+                        elevation: 0,
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 24, vertical: 12),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      child: const Text('Retry'),
+                    ),
                   ],
                 ),
               ),
@@ -93,100 +129,106 @@ class _ProfileScreenState extends State<ProfileScreen> {
             : profile.user.$createdAt;
 
         return Scaffold(
-      backgroundColor: AppColors.bg,
-      body: RefreshIndicator(
-        color: AppColors.primary,
-        onRefresh: _reload,
-        child: CustomScrollView(
-          physics: const AlwaysScrollableScrollPhysics(),
-          slivers: [
-            SliverToBoxAdapter(child: _Header(
-              name: name,
-              email: email,
-              avatarUrl: avatarUrl,
-            )),
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(20, 24, 20, 40),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const _SectionLabel('Account'),
-                    const SizedBox(height: 8),
-                    _InfoCard(
+          backgroundColor: AppColors.bg,
+          body: RefreshIndicator(
+            color: AppColors.primary,
+            onRefresh: _reload,
+            child: CustomScrollView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              slivers: [
+                SliverToBoxAdapter(
+                  child: _Header(
+                    name: name,
+                    email: email,
+                    avatarUrl: avatarUrl,
+                  ),
+                ),
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 28, 20, 40),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        _InfoTile(
-                          icon: Icons.badge_outlined,
-                          label: 'Name',
-                          value: name,
+                        const _SectionLabel('Account'),
+                        const SizedBox(height: 10),
+                        _InfoCard(
+                          children: [
+                            _InfoTile(
+                              icon: Icons.badge_outlined,
+                              label: 'Name',
+                              value: name,
+                            ),
+                            const _Divider(),
+                            _InfoTile(
+                              icon: Icons.email_outlined,
+                              label: 'Email',
+                              value: email,
+                              trailing:
+                                  emailVerified ? const _VerifiedBadge() : null,
+                            ),
+                            const _Divider(),
+                            _InfoTile(
+                              icon: Icons.phone_outlined,
+                              label: 'Phone',
+                              value: phone,
+                            ),
+                            const _Divider(),
+                            _InfoTile(
+                              icon: Icons.calendar_today_outlined,
+                              label: 'Joined',
+                              value: joined,
+                            ),
+                          ],
                         ),
-                        const _Divider(),
-                        _InfoTile(
-                          icon: Icons.email_outlined,
-                          label: 'Email',
-                          value: email,
-                          trailing:
-                              emailVerified ? const _VerifiedBadge() : null,
+                        const SizedBox(height: 28),
+                        const _SectionLabel('About'),
+                        const SizedBox(height: 10),
+                        _InfoCard(
+                          children: [
+                            Padding(
+                              padding: const EdgeInsets.all(16),
+                              child: Text(
+                                bio,
+                                style: const TextStyle(
+                                  color: AppColors.textDark,
+                                  fontSize: 14,
+                                  height: 1.6,
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
-                        const _Divider(),
-                        _InfoTile(
-                          icon: Icons.phone_outlined,
-                          label: 'Phone',
-                          value: phone,
-                        ),
-                        const _Divider(),
-                        _InfoTile(
-                          icon: Icons.calendar_today_outlined,
-                          label: 'Joined',
-                          value: joined,
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 24),
-                    const _SectionLabel('About'),
-                    const SizedBox(height: 8),
-                    _InfoCard(
-                      children: [
-                        Padding(
-                          padding: const EdgeInsets.all(16),
-                          child: Text(
-                            bio,
-                            style: const TextStyle(
-                              color: AppColors.textDark,
-                              fontSize: 14,
-                              height: 1.5,
+                        const SizedBox(height: 36),
+                        SizedBox(
+                          width: double.infinity,
+                          child: OutlinedButton.icon(
+                            onPressed: () {
+                              // TODO: hook up real logout logic
+                            },
+                            icon: const Icon(Icons.logout_rounded,
+                                size: 18, color: AppColors.danger),
+                            label: const Text(
+                              'Log out',
+                              style: TextStyle(fontWeight: FontWeight.w600),
+                            ),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: AppColors.danger,
+                              backgroundColor: AppColors.dangerLight,
+                              side: BorderSide.none,
+                              padding: const EdgeInsets.symmetric(vertical: 15),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(14),
+                              ),
                             ),
                           ),
                         ),
                       ],
                     ),
-                    const SizedBox(height: 32),
-                    SizedBox(
-                      width: double.infinity,
-                      child: OutlinedButton.icon(
-                        onPressed: () {
-                          // TODO: hook up real logout logic
-                        },
-                        icon: const Icon(Icons.logout,
-                            size: 18, color: AppColors.danger),
-                        label: const Text('Log out'),
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: AppColors.danger,
-                          side: const BorderSide(color: AppColors.danger),
-                          padding: const EdgeInsets.symmetric(vertical: 14),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
-              ),
+              ],
             ),
-          ],
-        ),
-      ),
+          ),
         );
       },
     );
@@ -223,7 +265,7 @@ class _Header extends StatelessWidget {
         : (email.isNotEmpty ? email[0].toUpperCase() : '?');
 
     return Container(
-      padding: const EdgeInsets.fromLTRB(20, 60, 20, 32),
+      padding: const EdgeInsets.fromLTRB(20, 64, 20, 36),
       decoration: const BoxDecoration(
         color: AppColors.card,
         border: Border(
@@ -233,40 +275,53 @@ class _Header extends StatelessWidget {
       child: Column(
         children: [
           Container(
-            width: 88,
-            height: 88,
-            decoration: BoxDecoration(
-              color: AppColors.primaryLight,
+            width: 92,
+            height: 92,
+            padding: const EdgeInsets.all(3),
+            decoration: const BoxDecoration(
               shape: BoxShape.circle,
-              image: avatarUrl.isNotEmpty
-                  ? DecorationImage(
-                      image: NetworkImage(avatarUrl),
-                      fit: BoxFit.cover,
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [AppColors.primary, AppColors.primaryLight],
+              ),
+            ),
+            child: Container(
+              decoration: BoxDecoration(
+                color: AppColors.primaryLight,
+                shape: BoxShape.circle,
+                image: avatarUrl.isNotEmpty
+                    ? DecorationImage(
+                        image: NetworkImage(avatarUrl),
+                        fit: BoxFit.cover,
+                      )
+                    : null,
+                border: Border.all(color: AppColors.card, width: 3),
+              ),
+              alignment: Alignment.center,
+              child: avatarUrl.isEmpty
+                  ? Text(
+                      initial,
+                      style: const TextStyle(
+                        fontSize: 30,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.primary,
+                      ),
                     )
                   : null,
             ),
-            alignment: Alignment.center,
-            child: avatarUrl.isEmpty
-                ? Text(
-                    initial,
-                    style: const TextStyle(
-                      fontSize: 32,
-                      fontWeight: FontWeight.w600,
-                      color: AppColors.primary,
-                    ),
-                  )
-                : null,
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 18),
           Text(
             name.isNotEmpty ? name : 'Unnamed User',
             style: const TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.w600,
+              fontSize: 21,
+              fontWeight: FontWeight.w700,
               color: AppColors.textDark,
+              letterSpacing: -0.3,
             ),
           ),
-          const SizedBox(height: 4),
+          const SizedBox(height: 5),
           Text(
             email,
             style: const TextStyle(
@@ -290,8 +345,8 @@ class _SectionLabel extends StatelessWidget {
       text.toUpperCase(),
       style: const TextStyle(
         fontSize: 12,
-        fontWeight: FontWeight.w600,
-        letterSpacing: 0.6,
+        fontWeight: FontWeight.w700,
+        letterSpacing: 0.8,
         color: AppColors.textMuted,
       ),
     );
@@ -307,8 +362,14 @@ class _InfoCard extends StatelessWidget {
     return Container(
       decoration: BoxDecoration(
         color: AppColors.card,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: AppColors.divider),
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.textDark.withOpacity(0.03),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
       ),
       clipBehavior: Clip.antiAlias,
       child: Column(children: children),
@@ -335,7 +396,16 @@ class _InfoTile extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       child: Row(
         children: [
-          Icon(icon, size: 20, color: AppColors.primary),
+          Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              color: AppColors.primaryLight,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            alignment: Alignment.center,
+            child: Icon(icon, size: 18, color: AppColors.primary),
+          ),
           const SizedBox(width: 14),
           Expanded(
             child: Column(
@@ -353,7 +423,7 @@ class _InfoTile extends StatelessWidget {
                   value,
                   style: const TextStyle(
                     fontSize: 14,
-                    fontWeight: FontWeight.w500,
+                    fontWeight: FontWeight.w600,
                     color: AppColors.textDark,
                   ),
                 ),
@@ -373,18 +443,25 @@ class _VerifiedBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
       decoration: BoxDecoration(
         color: AppColors.primaryLight,
         borderRadius: BorderRadius.circular(20),
       ),
-      child: const Text(
-        'Verified',
-        style: TextStyle(
-          fontSize: 11,
-          fontWeight: FontWeight.w600,
-          color: AppColors.primary,
-        ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: const [
+          Icon(Icons.check_circle_rounded, size: 12, color: AppColors.primary),
+          SizedBox(width: 4),
+          Text(
+            'Verified',
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              color: AppColors.primary,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -395,6 +472,6 @@ class _Divider extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Divider(height: 1, color: AppColors.divider, indent: 50);
+    return const Divider(height: 1, color: AppColors.divider, indent: 66);
   }
 }
