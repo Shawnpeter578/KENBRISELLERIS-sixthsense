@@ -38,7 +38,7 @@ enum _LocationState { loading, ready, serviceOff, denied, error }
 const _navy = Color(0xFF10233D);
 const _blue = Color(0xFF2F80ED);
 const _safe = Color(0xFF13B887);
-const _danger = Color(0xFFE85858);
+const _danger = Color.fromARGB(255, 20, 40, 119);
 const _surface = Color(0xFFF9FBFF);
 
 class _SafeZoneMapScreenState extends State<SafeZoneMapScreen> {
@@ -292,23 +292,14 @@ class _TopBar extends StatelessWidget {
           child: Row(children: [
             _RoundSurface(icon: Icons.arrow_back_rounded, onTap: onClose),
             const SizedBox(width: 10),
-            Expanded(
-              child: _Surface(
-                child: Text(
-                  mode == _Mode.draw ? 'Draw safe boundary' : 'Live location',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: GoogleFonts.manrope(color: _navy, fontWeight: FontWeight.w800, fontSize: 15),
-                ),
-              ),
-            ),
+            Expanded(child: _Surface(child: Text(mode == _Mode.draw ? 'Draw safe boundary' : 'Live location', style: GoogleFonts.manrope(color: _navy, fontWeight: FontWeight.w800, fontSize: 15)))),
             const SizedBox(width: 10),
             _Surface(
               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 5),
               child: TextButton.icon(
                 onPressed: mode == _Mode.draw ? onCancel : onDraw,
                 icon: Icon(mode == _Mode.draw ? Icons.close_rounded : Icons.draw_rounded, size: 18),
-                label: Text(mode == _Mode.draw ? 'Cancel' : 'Draw'),
+                label: Text(mode == _Mode.draw ? 'Cancel' : 'Draw', style: TextStyle(color: Colors.blueAccent),),
                 style: TextButton.styleFrom(foregroundColor: _blue, textStyle: GoogleFonts.manrope(fontWeight: FontWeight.w800, fontSize: 12)),
               ),
             ),
@@ -356,8 +347,8 @@ class _BottomPanel extends StatelessWidget {
           runSpacing: 8,
           alignment: WrapAlignment.end,
           children: [
-            OutlinedButton.icon(onPressed: onUndo, icon: const Icon(Icons.undo_rounded, size: 18), label: const Text('Undo')),
-            TextButton(onPressed: onCancel, child: const Text('Cancel')),
+            OutlinedButton.icon(onPressed: onUndo, icon: const Icon(Icons.undo_rounded, size: 18), label: const Text('Undo',  style: TextStyle(color: Colors.blueAccent))),
+            TextButton(onPressed: onCancel, child: const Text('Cancel', style: TextStyle(color: Colors.blueAccent),)),
             FilledButton.icon(onPressed: draftCount >= 3 ? onSave : null, icon: const Icon(Icons.check_rounded, size: 18), label: const Text('Save boundary')),
           ],
         ),
@@ -372,16 +363,15 @@ class _BottomPanel extends StatelessWidget {
         Container(width: 38, height: 38, decoration: BoxDecoration(color: color.withOpacity(.12), shape: BoxShape.circle), child: Icon(Icons.location_on_rounded, color: color)),
         const SizedBox(width: 10),
         Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(personName, maxLines: 1, overflow: TextOverflow.ellipsis, style: GoogleFonts.manrope(color: _navy, fontWeight: FontWeight.w800, fontSize: 16)), Text(detail, maxLines: 1, overflow: TextOverflow.ellipsis, style: GoogleFonts.manrope(color: const Color(0xFF64748B), fontSize: 12))])),
+        Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6), decoration: BoxDecoration(color: color.withOpacity(.12), borderRadius: BorderRadius.circular(99)), child: Text(status, style: GoogleFonts.manrope(color: color, fontWeight: FontWeight.w800, fontSize: 11))),
       ]),
-      const SizedBox(height: 10),
-      Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6), decoration: BoxDecoration(color: color.withOpacity(.12), borderRadius: BorderRadius.circular(99)), child: Text(status, style: GoogleFonts.manrope(color: color, fontWeight: FontWeight.w800, fontSize: 11))),
       if (hasZone) ...[
         const SizedBox(height: 12),
         Text(distance == null ? 'Boundary monitoring is active.' : '${distance!.round()} m from the nearest boundary', style: GoogleFonts.manrope(color: const Color(0xFF64748B), fontSize: 12.5)),
       ],
       const SizedBox(height: 16),
       Row(children: [
-        Expanded(child: OutlinedButton.icon(onPressed: onStart, icon: const Icon(Icons.draw_rounded, size: 18), label: Text(hasZone ? 'Edit boundary' : 'Draw boundary'))),
+        Expanded(child: OutlinedButton.icon(onPressed: onStart, icon: const Icon(Icons.draw_rounded, size: 18, color: Colors.blueAccent,), label: Text(hasZone ? 'Edit boundary' : 'Draw boundary', style: TextStyle(color: Colors.blueAccent),))),
         if (hasZone) ...[const SizedBox(width: 10), IconButton.filledTonal(onPressed: onRemove, tooltip: 'Remove boundary', icon: const Icon(Icons.delete_outline_rounded, color: _danger))],
       ]),
     ]);

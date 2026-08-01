@@ -177,42 +177,40 @@ class _NavItem extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       behavior: HitTestBehavior.opaque,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 220),
-        curve: Curves.easeOut,
-        margin: const EdgeInsets.symmetric(vertical: 10),
-        padding: EdgeInsets.symmetric(horizontal: selected ? 18 : 0, vertical: 10),
-        decoration: BoxDecoration(
-          color: selected ? primary.withOpacity(0.10) : Colors.transparent,
-          borderRadius: BorderRadius.circular(18),
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              icon,
-              size: 22,
-              color: selected ? primary : textSecondary,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          // Each item gets one third of the navigation bar. Keep the selected
+          // label inside that width on compact phones instead of overflowing.
+          final compact = constraints.maxWidth < 118;
+          return AnimatedContainer(
+            duration: const Duration(milliseconds: 220),
+            curve: Curves.easeOut,
+            margin: const EdgeInsets.symmetric(vertical: 10),
+            padding: EdgeInsets.symmetric(horizontal: selected ? (compact ? 5 : 18) : 0, vertical: 10),
+            decoration: BoxDecoration(
+              color: selected ? primary.withOpacity(0.10) : Colors.transparent,
+              borderRadius: BorderRadius.circular(18),
             ),
-            AnimatedSize(
-              duration: const Duration(milliseconds: 220),
-              curve: Curves.easeOut,
-              child: selected
-                  ? Padding(
-                      padding: const EdgeInsets.only(left: 8),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(icon, size: 22, color: selected ? primary : textSecondary),
+                if (selected)
+                  Flexible(
+                    child: Padding(
+                      padding: const EdgeInsets.only(left: 6),
                       child: Text(
                         label,
-                        style: TextStyle(
-                          fontSize: 13.5,
-                          fontWeight: FontWeight.w700,
-                          color: primary,
-                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(fontSize: compact ? 12 : 13.5, fontWeight: FontWeight.w700, color: primary),
                       ),
-                    )
-                  : const SizedBox.shrink(),
+                    ),
+                  ),
+              ],
             ),
-          ],
-        ),
+          );
+        },
       ),
     );
   }
