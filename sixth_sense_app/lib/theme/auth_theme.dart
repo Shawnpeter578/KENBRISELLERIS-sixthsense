@@ -1,13 +1,13 @@
 import 'package:flutter/material.dart';
 
 class AuthColors {
-  static const primary = Color(0xFF2563EB); // blue-600
-  static const primaryDark = Color(0xFF1D4ED8); // blue-700
+  static const primary = Color(0xFFFFB6C1); // baby pink
+  static const primaryDark = Color(0xFFFF8FAB);
   static const background = Color(0xFFFFFFFF);
-  static const surface = Color(0xFFF5F8FF); // very light blue
-  static const border = Color(0xFFE2E8F0);
-  static const textPrimary = Color(0xFF0F172A);
-  static const textSecondary = Color(0xFF64748B);
+  static const surface = Color(0xFFFFF5F8);
+  static const border = Color(0xFFF8CBD6);
+  static const textPrimary = Color(0xFF3B1F2B);
+  static const textSecondary = Color(0xFF8A6473);
   static const error = Color(0xFFDC2626);
 }
 
