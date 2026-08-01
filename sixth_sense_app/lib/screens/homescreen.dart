@@ -1,5 +1,7 @@
 import 'package:appwrite/appwrite.dart';
 import 'package:flutter/material.dart';
+import 'package:sixth_sense_app/screens/profile.dart';
+import 'package:sixth_sense_app/screens/safezone.dart';
 import 'package:sixth_sense_app/services/appwrite_service.dart';
 
 // Colors
@@ -200,16 +202,24 @@ class _CaneDashboardScreenState extends State<CaneDashboardScreen> {
         ),
         Row(
           children: [
-            _circleIconButton(Icons.notifications_none_rounded),
+            _circleIconButton(
+              
+              Icons.notifications_none_rounded, 
+              (){}
+            ),
             const SizedBox(width: 10),
-            _circleIconButton(Icons.person_outline_rounded),
+            _circleIconButton(Icons.person_outline_rounded,
+            (){
+                Navigator.of(context).push(MaterialPageRoute(builder: (context)=> ProfileScreen()));
+              }
+            ),
           ],
         ),
       ],
     );
   }
 
-  Widget _circleIconButton(IconData icon) {
+  Widget _circleIconButton(IconData icon,  VoidCallback onPressed) {
     return Container(
       width: 42,
       height: 42,
@@ -218,7 +228,7 @@ class _CaneDashboardScreenState extends State<CaneDashboardScreen> {
         shape: BoxShape.circle,
         boxShadow: CaneDashboardScreen._cardShadow,
       ),
-      child: Icon(icon, size: 19, color: AppColors.deepBlue),
+      child:IconButton(onPressed:  onPressed, icon: Icon(icon), iconSize: 19, color: AppColors.deepBlue),
     );
   }
 
@@ -537,7 +547,7 @@ class _CaneDashboardScreenState extends State<CaneDashboardScreen> {
             ),
           ),
           TextButton(
-            onPressed: () {},
+            onPressed: (){},
             style: TextButton.styleFrom(
               backgroundColor: AppColors.paleBlue,
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),

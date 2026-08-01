@@ -1,25 +1,22 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_map/flutter_map.dart';
-import 'package:latlong2/latlong.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:latlong2/latlong.dart';
 import 'package:sixth_sense_app/screens/geofence.dart';
 
-
-/// Full-screen "Safe Zone" map for the caregiver.
+/// A phone-first live location and safe-boundary screen.
 ///
-/// Draw an area on the map, save it, and the pulsing dot representing the
-/// blind person turns from mint to coral — with a banner — the moment
-/// their location falls outside it.
-///
-/// This build keeps things intentionally simple: one shape, one signal
-/// color pair, tap-to-simulate movement. Swap in a real location stream
-/// later (see README) without touching the visual layer.
+/// The widget keeps boundary storage outside the UI: use [onZoneSaved] to
+/// persist the returned polygon in your backend/local database.
 class SafeZoneMapScreen extends StatefulWidget {
   const SafeZoneMapScreen({
     super.key,
-    this.personName = 'Meera',
-    this.initialCenter = const LatLng(12.9716, 77.5946), // Bengaluru default
+    this.personName = 'My location',
+    this.initialCenter = const LatLng(12.9716, 77.5946),
     this.initialZone = const [],
     this.onZoneSaved,
     this.onZoneBreach,
@@ -35,26 +32,32 @@ class SafeZoneMapScreen extends StatefulWidget {
   State<SafeZoneMapScreen> createState() => _SafeZoneMapScreenState();
 }
 
-enum _Mode { draw, live }
+enum _Mode { live, draw }
+enum _LocationState { loading, ready, serviceOff, denied, error }
 
-// ---- Palette ---------------------------------------------------------
-// One calm ink background, one mint "safe" signal, one coral "alert"
-// signal. Everything else in the UI is a shade of white on top of glass.
-const _ink = Color(0xFF0E1420);
-const _mint = Color(0xFF6EE7D6);
-const _coral = Color(0xFFFF6F6B);
-const _glass = Color(0xFF1A2233);
+const _navy = Color(0xFF10233D);
+const _blue = Color(0xFF2F80ED);
+const _safe = Color(0xFF13B887);
+const _danger = Color(0xFFE85858);
+const _surface = Color(0xFFF9FBFF);
 
 class _SafeZoneMapScreenState extends State<SafeZoneMapScreen> {
   final MapController _mapController = MapController();
+  StreamSubscription<Position>? _positionSubscription;
 
   _Mode _mode = _Mode.live;
+  _LocationState _locationState = _LocationState.loading;
   List<LatLng> _zone = [];
   List<LatLng> _draft = [];
-
   late LatLng _person;
-  bool _outside = false;
+  DateTime? _lastUpdated;
+  double? _accuracy;
   double? _distance;
+  bool _outside = false;
+  String? _locationError;
+
+  bool get _hasZone => _zone.length >= 3;
+  bool get _isDrawing => _mode == _Mode.draw;
 
   @override
   void initState() {
@@ -62,149 +65,212 @@ class _SafeZoneMapScreenState extends State<SafeZoneMapScreen> {
     _person = widget.initialCenter;
     _zone = List.of(widget.initialZone);
     _evaluate();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _startLiveLocation());
   }
 
-  bool get _hasZone => _zone.length >= 3;
+  @override
+  void dispose() {
+    _positionSubscription?.cancel();
+    super.dispose();
+  }
 
-  void _onTap(TapPosition _, LatLng point) {
-    if (_mode == _Mode.draw) {
-      setState(() => _draft.add(point));
-    } else {
-      setState(() => _person = point);
-      _evaluate();
+  Future<void> _startLiveLocation() async {
+    await _positionSubscription?.cancel();
+    if (mounted) setState(() => _locationState = _LocationState.loading);
+
+    if (!await Geolocator.isLocationServiceEnabled()) {
+      _setLocationProblem(_LocationState.serviceOff, 'Turn on Location Services to show your live position.');
+      return;
     }
+
+    var permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+    }
+    if (permission == LocationPermission.denied || permission == LocationPermission.deniedForever) {
+      _setLocationProblem(
+        _LocationState.denied,
+        permission == LocationPermission.deniedForever
+            ? 'Location permission is blocked. Enable it in your phone settings.'
+            : 'Allow location permission to show your live position.',
+      );
+      return;
+    }
+
+    try {
+      final position = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(accuracy: LocationAccuracy.best, distanceFilter: 5),
+      );
+      _updatePosition(position, recenter: true);
+      _positionSubscription = Geolocator.getPositionStream(
+        locationSettings: const LocationSettings(accuracy: LocationAccuracy.best, distanceFilter: 5),
+      ).listen(
+        _updatePosition,
+        onError: (_) => _setLocationProblem(_LocationState.error, 'Unable to update your live location.'),
+      );
+    } catch (_) {
+      _setLocationProblem(_LocationState.error, 'Unable to get your live location. Try again.');
+    }
+  }
+
+  void _setLocationProblem(_LocationState state, String message) {
+    if (!mounted) return;
+    setState(() {
+      _locationState = state;
+      _locationError = message;
+    });
+  }
+
+  void _updatePosition(Position position, {bool recenter = false}) {
+    if (!mounted) return;
+    final point = LatLng(position.latitude, position.longitude);
+    final wasOutside = _outside;
+    final result = _evaluateAt(point);
+    setState(() {
+      _person = point;
+      _accuracy = position.accuracy;
+      _lastUpdated = DateTime.now();
+      _locationState = _LocationState.ready;
+      _locationError = null;
+      _outside = result.$1;
+      _distance = result.$2;
+    });
+    if (_outside && !wasOutside) {
+      HapticFeedback.heavyImpact();
+      widget.onZoneBreach?.call();
+    }
+    if (recenter) _mapController.move(point, 16);
+  }
+
+  (bool, double?) _evaluateAt(LatLng point) {
+    if (!_hasZone) return (false, null);
+    return (!isPointInPolygon(point, _zone), distanceToPolygonBoundaryMeters(point, _zone));
   }
 
   void _evaluate() {
-    if (!_hasZone) {
-      setState(() {
-        _outside = false;
-        _distance = null;
-      });
-      return;
-    }
-    final inside = isPointInPolygon(_person, _zone);
-    final dist = distanceToPolygonBoundaryMeters(_person, _zone);
-    final wasOutside = _outside;
-    setState(() {
-      _outside = !inside;
-      _distance = dist;
-    });
-    if (_outside && !wasOutside) {
-      HapticFeedback.vibrate();
-      widget.onZoneBreach?.call();
-      // Hook a real push notification (FCM/APNs) here so the caregiver is
-      // reached even when this screen isn't open — see README.
-    }
+    final result = _evaluateAt(_person);
+    _outside = result.$1;
+    _distance = result.$2;
   }
 
-  void _startDrawing() => setState(() {
-        _draft = List.of(_zone);
+  void _onTap(TapPosition _, LatLng point) {
+    if (_isDrawing) setState(() => _draft.add(point));
+  }
+
+  void _beginDrawing() => setState(() {
         _mode = _Mode.draw;
+        _draft = List.of(_zone);
       });
 
-  void _save() {
+  void _cancelDrawing() => setState(() {
+        _mode = _Mode.live;
+        _draft = [];
+      });
+
+  void _saveBoundary() {
     if (_draft.length < 3) return;
+    final wasOutside = _outside;
+    final result = (
+      !isPointInPolygon(_person, _draft),
+      distanceToPolygonBoundaryMeters(_person, _draft),
+    );
     setState(() {
       _zone = List.of(_draft);
       _draft = [];
       _mode = _Mode.live;
+      _outside = result.$1;
+      _distance = result.$2;
     });
-    widget.onZoneSaved?.call(_zone);
-    _evaluate();
+    widget.onZoneSaved?.call(List.unmodifiable(_zone));
+    if (_outside && !wasOutside) {
+      HapticFeedback.heavyImpact();
+      widget.onZoneBreach?.call();
+    }
   }
 
-  void _cancelDrawing() => setState(() {
-        _draft = [];
-        _mode = _Mode.live;
-      });
+  void _removeBoundary() {
+    setState(() {
+      _zone = [];
+      _draft = [];
+      _mode = _Mode.live;
+      _outside = false;
+      _distance = null;
+    });
+    widget.onZoneSaved?.call(const []);
+  }
+
+  void _recenter() => _mapController.move(_person, 16);
 
   @override
   Widget build(BuildContext context) {
-    final signal = _outside ? _coral : _mint;
-
+    final signal = _outside ? _danger : _safe;
     return Scaffold(
-      backgroundColor: _ink,
+      backgroundColor: _surface,
       body: Stack(
         children: [
           FlutterMap(
             mapController: _mapController,
-            options: MapOptions(
-              initialCenter: _person,
-              initialZoom: 16,
-              onTap: _onTap,
-            ),
+            options: MapOptions(initialCenter: _person, initialZoom: 16, onTap: _onTap),
             children: [
               TileLayer(
-                urlTemplate: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
-                subdomains: const ['a', 'b', 'c', 'd'],
-                userAgentPackageName: 'com.example.safezone',
+                urlTemplate: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+                subdomains: const ['a', 'b', 'c'],
+                userAgentPackageName: 'com.example.sixth_sense_app',
               ),
               if (_hasZone)
-                PolygonLayer(polygons: [
-                  Polygon(
-                    points: _zone,
-                    color: signal.withOpacity(0.10),
-                    borderColor: signal.withOpacity(0.85),
-                    borderStrokeWidth: 2.5,
-                  ),
-                ]),
-              if (_mode == _Mode.draw && _draft.length >= 2)
-                PolylineLayer(polylines: [
-                  Polyline(points: _draft, color: _mint, strokeWidth: 2.5),
-                ]),
-              if (_mode == _Mode.draw)
+                PolygonLayer(
+                  polygons: [
+                    Polygon(
+                      points: _zone,
+                      color: signal.withOpacity(.16),
+                      borderColor: signal,
+                      borderStrokeWidth: 3,
+                    ),
+                  ],
+                ),
+              if (_isDrawing && _draft.length >= 2)
+                PolylineLayer(polylines: [Polyline(points: _draft, color: _blue, strokeWidth: 3)]),
+              if (_isDrawing)
                 MarkerLayer(
-                  markers: _draft
-                      .map((p) => Marker(
-                            point: p,
-                            width: 12,
-                            height: 12,
-                            child: Container(
-                              decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                color: _mint,
-                                border: Border.all(color: _ink, width: 2),
-                              ),
-                            ),
-                          ))
-                      .toList(),
+                  markers: _draft.map((point) => Marker(point: point, width: 22, height: 22, child: const _Vertex())).toList(),
                 ),
-              MarkerLayer(markers: [
-                Marker(
-                  point: _person,
-                  width: 56,
-                  height: 56,
-                  child: _Pulse(color: signal),
-                ),
-              ]),
+              MarkerLayer(markers: [Marker(point: _person, width: 64, height: 64, child: _LiveMarker(color: signal))]),
             ],
           ),
-
-          _Header(
-            mode: _mode,
-            onBack: () => Navigator.of(context).maybePop(),
-            onMode: (m) => m == _Mode.draw ? _startDrawing() : _cancelDrawing(),
+          _TopBar(mode: _mode, onClose: () => Navigator.of(context).maybePop(), onDraw: _beginDrawing, onCancel: _cancelDrawing),
+          Positioned(
+            right: 16,
+            top: MediaQuery.paddingOf(context).top + 78,
+            child: _MapButton(icon: Icons.my_location_rounded, tooltip: 'Center on my location', onPressed: _recenter),
           ),
-
-          AnimatedSwitcher(
-            duration: const Duration(milliseconds: 220),
-            child: _outside
-                ? _AlertBar(key: const ValueKey('alert'), name: widget.personName, meters: _distance)
-                : const SizedBox.shrink(key: ValueKey('none')),
-          ),
-
-          _BottomSheet(
-            mode: _mode,
+          if (_locationState != _LocationState.ready)
+            Positioned(
+              top: MediaQuery.paddingOf(context).top + 74,
+              left: 16,
+              right: 72,
+              child: _LocationNotice(state: _locationState, message: _locationError, onRetry: _startLiveLocation),
+            ),
+          if (_outside)
+            Positioned(
+              top: MediaQuery.paddingOf(context).top + 136,
+              left: 16,
+              right: 16,
+              child: _BreachBanner(name: widget.personName, distance: _distance),
+            ),
+          _BottomPanel(
+            drawing: _isDrawing,
             hasZone: _hasZone,
             outside: _outside,
+            personName: widget.personName,
+            accuracy: _accuracy,
+            updatedAt: _lastUpdated,
             distance: _distance,
             draftCount: _draft.length,
-            personName: widget.personName,
-            onStartDrawing: _startDrawing,
-            onSave: _save,
-            onCancel: _cancelDrawing,
+            onStart: _beginDrawing,
             onUndo: _draft.isEmpty ? null : () => setState(() => _draft.removeLast()),
+            onSave: _saveBoundary,
+            onCancel: _cancelDrawing,
+            onRemove: _removeBoundary,
           ),
         ],
       ),
@@ -212,336 +278,175 @@ class _SafeZoneMapScreenState extends State<SafeZoneMapScreen> {
   }
 }
 
-// ============================================================================
-// Presentation
-// ============================================================================
-
-class _Pulse extends StatefulWidget {
-  const _Pulse({required this.color});
-  final Color color;
-
-  @override
-  State<_Pulse> createState() => _PulseState();
-}
-
-class _PulseState extends State<_Pulse> with SingleTickerProviderStateMixin {
-  late final _c = AnimationController(vsync: this, duration: const Duration(milliseconds: 1600))..repeat();
-
-  @override
-  void dispose() {
-    _c.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _c,
-      builder: (context, _) => Stack(
-        alignment: Alignment.center,
-        children: [
-          Transform.scale(
-            scale: 1 + _c.value * 1.4,
-            child: Opacity(
-              opacity: (1 - _c.value).clamp(0.0, 1.0) * 0.5,
-              child: Container(
-                width: 24,
-                height: 24,
-                decoration: BoxDecoration(shape: BoxShape.circle, color: widget.color),
-              ),
-            ),
-          ),
-          Container(
-            width: 16,
-            height: 16,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: widget.color,
-              border: Border.all(color: Colors.white, width: 2),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// Consistent floating glass surface used for every piece of chrome.
-class _Glass extends StatelessWidget {
-  const _Glass({super.key, required this.child, this.padding = const EdgeInsets.all(16), this.radius = 20});
-  final Widget child;
-  final EdgeInsets padding;
-  final double radius;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: padding,
-      decoration: BoxDecoration(
-        color: _glass.withOpacity(0.86),
-        borderRadius: BorderRadius.circular(radius),
-        border: Border.all(color: Colors.white.withOpacity(0.06)),
-        boxShadow: [
-          BoxShadow(color: Colors.black.withOpacity(0.35), blurRadius: 24, offset: const Offset(0, 8)),
-        ],
-      ),
-      child: child,
-    );
-  }
-}
-
-class _Header extends StatelessWidget {
-  const _Header({required this.mode, required this.onBack, required this.onMode});
+class _TopBar extends StatelessWidget {
+  const _TopBar({required this.mode, required this.onClose, required this.onDraw, required this.onCancel});
   final _Mode mode;
-  final VoidCallback onBack;
-  final ValueChanged<_Mode> onMode;
+  final VoidCallback onClose;
+  final VoidCallback onDraw;
+  final VoidCallback onCancel;
 
   @override
-  Widget build(BuildContext context) {
-    return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-        child: Row(
-          children: [
-            _Glass(
-              radius: 16,
-              padding: const EdgeInsets.all(10),
-              child: InkWell(
-                onTap: onBack,
-                borderRadius: BorderRadius.circular(12),
-                child: const Icon(Icons.arrow_back_rounded, color: Colors.white, size: 20),
-              ),
-            ),
-            const Spacer(),
-            _Glass(
-              radius: 16,
-              padding: const EdgeInsets.all(4),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  _Tab(label: 'Live', selected: mode == _Mode.live, onTap: () => onMode(_Mode.live)),
-                  _Tab(label: 'Draw', selected: mode == _Mode.draw, onTap: () => onMode(_Mode.draw)),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _Tab extends StatelessWidget {
-  const _Tab({required this.label, required this.selected, required this.onTap});
-  final String label;
-  final bool selected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 180),
-        curve: Curves.easeOut,
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
-        decoration: BoxDecoration(
-          color: selected ? _mint : Colors.transparent,
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Text(
-          label,
-          style: GoogleFonts.manrope(
-            color: selected ? _ink : Colors.white54,
-            fontWeight: FontWeight.w700,
-            fontSize: 13,
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _AlertBar extends StatelessWidget {
-  const _AlertBar({super.key, required this.name, required this.meters});
-  final String name;
-  final double? meters;
-
-  @override
-  Widget build(BuildContext context) {
-    return Positioned(
-      top: 74,
-      left: 16,
-      right: 16,
-      child: SafeArea(
-        top: false,
-        bottom: false,
-        child: _Glass(
-          radius: 16,
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
-          child: Row(
-            children: [
-              Container(width: 8, height: 8, decoration: const BoxDecoration(shape: BoxShape.circle, color: _coral)),
-              const SizedBox(width: 10),
-              Expanded(
+  Widget build(BuildContext context) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+          child: Row(children: [
+            _RoundSurface(icon: Icons.arrow_back_rounded, onTap: onClose),
+            const SizedBox(width: 10),
+            Expanded(
+              child: _Surface(
                 child: Text(
-                  meters == null
-                      ? '$name has left the safe zone'
-                      : '$name is ${meters!.round()}m outside the safe zone',
-                  style: GoogleFonts.manrope(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 13),
+                  mode == _Mode.draw ? 'Draw safe boundary' : 'Live location',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.manrope(color: _navy, fontWeight: FontWeight.w800, fontSize: 15),
                 ),
               ),
-            ],
-          ),
+            ),
+            const SizedBox(width: 10),
+            _Surface(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 5),
+              child: TextButton.icon(
+                onPressed: mode == _Mode.draw ? onCancel : onDraw,
+                icon: Icon(mode == _Mode.draw ? Icons.close_rounded : Icons.draw_rounded, size: 18),
+                label: Text(mode == _Mode.draw ? 'Cancel' : 'Draw'),
+                style: TextButton.styleFrom(foregroundColor: _blue, textStyle: GoogleFonts.manrope(fontWeight: FontWeight.w800, fontSize: 12)),
+              ),
+            ),
+          ]),
         ),
-      ),
-    );
-  }
+      );
 }
 
-class _BottomSheet extends StatelessWidget {
-  const _BottomSheet({
-    required this.mode,
-    required this.hasZone,
-    required this.outside,
-    required this.distance,
-    required this.draftCount,
-    required this.personName,
-    required this.onStartDrawing,
-    required this.onSave,
-    required this.onCancel,
-    required this.onUndo,
-  });
-
-  final _Mode mode;
-  final bool hasZone;
-  final bool outside;
-  final double? distance;
-  final int draftCount;
+class _BottomPanel extends StatelessWidget {
+  const _BottomPanel({required this.drawing, required this.hasZone, required this.outside, required this.personName, required this.accuracy, required this.updatedAt, required this.distance, required this.draftCount, required this.onStart, required this.onUndo, required this.onSave, required this.onCancel, required this.onRemove});
+  final bool drawing, hasZone, outside;
   final String personName;
-  final VoidCallback onStartDrawing;
-  final VoidCallback onSave;
-  final VoidCallback onCancel;
+  final double? accuracy, distance;
+  final DateTime? updatedAt;
+  final int draftCount;
+  final VoidCallback onStart, onSave, onCancel, onRemove;
   final VoidCallback? onUndo;
 
   @override
-  Widget build(BuildContext context) {
-    return Positioned(
-      left: 16,
-      right: 16,
-      bottom: 20,
-      child: SafeArea(
-        top: false,
-        child: AnimatedSwitcher(
-          duration: const Duration(milliseconds: 200),
-          child: mode == _Mode.draw ? _drawCard() : _liveCard(),
-        ),
-      ),
-    );
-  }
-
-  Widget _drawCard() {
-    return _Glass(
-      key: const ValueKey('draw'),
-      padding: const EdgeInsets.fromLTRB(18, 16, 14, 14),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            draftCount < 3 ? 'Tap the map to trace where they can go' : 'Keep tracing, or save this area',
-            style: GoogleFonts.manrope(color: Colors.white70, fontSize: 12.5),
-          ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              IconButton(
-                onPressed: onUndo,
-                icon: const Icon(Icons.undo_rounded, color: Colors.white54, size: 20),
-                tooltip: 'Undo point',
-              ),
-              TextButton(
-                onPressed: onCancel,
-                child: Text('Cancel', style: GoogleFonts.manrope(color: Colors.white54, fontWeight: FontWeight.w600)),
-              ),
-              const Spacer(),
-              ElevatedButton(
-                onPressed: draftCount < 3 ? null : onSave,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: _mint,
-                  disabledBackgroundColor: Colors.white12,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                ),
-                child: Text(
-                  'Save area',
-                  style: GoogleFonts.manrope(
-                    color: draftCount < 3 ? Colors.white38 : _ink,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _liveCard() {
-    if (!hasZone) {
-      return _Glass(
-        key: const ValueKey('empty'),
-        child: Row(
-          children: [
-            Expanded(
-              child: Text(
-                'No safe zone set yet',
-                style: GoogleFonts.manrope(color: Colors.white70, fontSize: 13.5, fontWeight: FontWeight.w500),
-              ),
+  Widget build(BuildContext context) => Positioned(
+        left: 12,
+        right: 12,
+        bottom: 12,
+        child: SafeArea(
+          top: false,
+          child: _Surface(
+            radius: 26,
+            padding: const EdgeInsets.all(18),
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 200),
+              child: drawing ? _drawingCard() : _statusCard(),
             ),
-            ElevatedButton(
-              onPressed: onStartDrawing,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: _mint,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              ),
-              child: Text('Draw zone', style: GoogleFonts.manrope(color: _ink, fontWeight: FontWeight.w700)),
-            ),
-          ],
+          ),
         ),
       );
-    }
 
-    final signal = outside ? _coral : _mint;
-    final status = outside ? 'Outside safe zone' : 'Inside safe zone';
-    final sub = distance == null ? 'Tap the map to move $personName' : '${distance!.round()}m from the boundary';
+  Widget _drawingCard() => Column(key: const ValueKey('drawing'), mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text('Create your boundary', style: GoogleFonts.manrope(color: _navy, fontWeight: FontWeight.w800, fontSize: 18)),
+        const SizedBox(height: 4),
+        Text(draftCount < 3 ? 'Tap at least 3 points on the map. $draftCount added.' : '$draftCount points added. Save when the area looks right.', style: GoogleFonts.manrope(color: const Color(0xFF64748B), fontSize: 12.5, height: 1.35)),
+        const SizedBox(height: 16),
+        // Wrap actions so compact phones never receive a horizontal overflow.
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          alignment: WrapAlignment.end,
+          children: [
+            OutlinedButton.icon(onPressed: onUndo, icon: const Icon(Icons.undo_rounded, size: 18), label: const Text('Undo')),
+            TextButton(onPressed: onCancel, child: const Text('Cancel')),
+            FilledButton.icon(onPressed: draftCount >= 3 ? onSave : null, icon: const Icon(Icons.check_rounded, size: 18), label: const Text('Save boundary')),
+          ],
+        ),
+      ]);
 
-    return _Glass(
-      key: const ValueKey('status'),
-      child: Row(
-        children: [
-          Container(width: 10, height: 10, decoration: BoxDecoration(shape: BoxShape.circle, color: signal)),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(personName, style: GoogleFonts.manrope(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 14.5)),
-                Text(sub, style: GoogleFonts.manrope(color: Colors.white38, fontSize: 11.5)),
-              ],
-            ),
+  Widget _statusCard() {
+    final color = outside ? _danger : _safe;
+    final status = outside ? 'Outside boundary' : hasZone ? 'Inside boundary' : 'No boundary yet';
+    final detail = accuracy == null ? 'Finding your phone…' : 'Live • accurate to ${accuracy!.round()} m';
+    return Column(key: const ValueKey('status'), mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Row(children: [
+        Container(width: 38, height: 38, decoration: BoxDecoration(color: color.withOpacity(.12), shape: BoxShape.circle), child: Icon(Icons.location_on_rounded, color: color)),
+        const SizedBox(width: 10),
+        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(personName, maxLines: 1, overflow: TextOverflow.ellipsis, style: GoogleFonts.manrope(color: _navy, fontWeight: FontWeight.w800, fontSize: 16)), Text(detail, maxLines: 1, overflow: TextOverflow.ellipsis, style: GoogleFonts.manrope(color: const Color(0xFF64748B), fontSize: 12))])),
+      ]),
+      const SizedBox(height: 10),
+      Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6), decoration: BoxDecoration(color: color.withOpacity(.12), borderRadius: BorderRadius.circular(99)), child: Text(status, style: GoogleFonts.manrope(color: color, fontWeight: FontWeight.w800, fontSize: 11))),
+      if (hasZone) ...[
+        const SizedBox(height: 12),
+        Text(distance == null ? 'Boundary monitoring is active.' : '${distance!.round()} m from the nearest boundary', style: GoogleFonts.manrope(color: const Color(0xFF64748B), fontSize: 12.5)),
+      ],
+      const SizedBox(height: 16),
+      Row(children: [
+        Expanded(child: OutlinedButton.icon(onPressed: onStart, icon: const Icon(Icons.draw_rounded, size: 18), label: Text(hasZone ? 'Edit boundary' : 'Draw boundary'))),
+        if (hasZone) ...[const SizedBox(width: 10), IconButton.filledTonal(onPressed: onRemove, tooltip: 'Remove boundary', icon: const Icon(Icons.delete_outline_rounded, color: _danger))],
+      ]),
+    ]);
+  }
+}
+
+class _LocationNotice extends StatelessWidget {
+  const _LocationNotice({required this.state, required this.message, required this.onRetry});
+  final _LocationState state;
+  final String? message;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    final loading = state == _LocationState.loading;
+    final opensSettings = state == _LocationState.denied || state == _LocationState.serviceOff;
+    return _Surface(
+      radius: 16,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      child: Row(children: [
+        if (loading) const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2.2)) else const Icon(Icons.location_off_rounded, color: _danger, size: 20),
+        const SizedBox(width: 9),
+        Expanded(child: Text(loading ? 'Getting your live location…' : message ?? 'Location unavailable', style: GoogleFonts.manrope(color: _navy, fontWeight: FontWeight.w600, fontSize: 12))),
+        if (!loading)
+          TextButton(
+            onPressed: opensSettings
+                ? () {
+                    if (state == _LocationState.serviceOff) {
+                      Geolocator.openLocationSettings();
+                    } else {
+                      Geolocator.openAppSettings();
+                    }
+                  }
+                : onRetry,
+            child: Text(opensSettings ? 'Settings' : 'Retry'),
           ),
-          Text(status, style: GoogleFonts.manrope(color: signal, fontWeight: FontWeight.w700, fontSize: 12.5)),
-          const SizedBox(width: 4),
-          IconButton(
-            onPressed: onStartDrawing,
-            icon: const Icon(Icons.edit_rounded, color: Colors.white38, size: 18),
-            tooltip: 'Edit zone',
-          ),
-        ],
-      ),
+      ]),
     );
   }
 }
+
+class _BreachBanner extends StatelessWidget {
+  const _BreachBanner({required this.name, required this.distance});
+  final String name;
+  final double? distance;
+  @override
+  Widget build(BuildContext context) => _Surface(radius: 16, padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11), child: Row(children: [const Icon(Icons.warning_amber_rounded, color: _danger), const SizedBox(width: 8), Expanded(child: Text(distance == null ? '$name has left the boundary' : '$name is ${distance!.round()} m from the boundary', style: GoogleFonts.manrope(color: _danger, fontWeight: FontWeight.w800, fontSize: 12.5)))]));
+}
+
+class _LiveMarker extends StatefulWidget {
+  const _LiveMarker({required this.color});
+  final Color color;
+  @override
+  State<_LiveMarker> createState() => _LiveMarkerState();
+}
+
+class _LiveMarkerState extends State<_LiveMarker> with SingleTickerProviderStateMixin {
+  late final AnimationController _controller = AnimationController(vsync: this, duration: const Duration(milliseconds: 1600))..repeat();
+  @override
+  void dispose() { _controller.dispose(); super.dispose(); }
+  @override
+  Widget build(BuildContext context) => AnimatedBuilder(animation: _controller, builder: (_, __) => Stack(alignment: Alignment.center, children: [Container(width: 30 + 24 * _controller.value, height: 30 + 24 * _controller.value, decoration: BoxDecoration(color: widget.color.withOpacity((.28 * (1 - _controller.value)).clamp(0.0, 1.0).toDouble()), shape: BoxShape.circle)), Container(width: 20, height: 20, decoration: BoxDecoration(color: widget.color, shape: BoxShape.circle, border: Border.all(color: Colors.white, width: 3), boxShadow: [BoxShadow(color: widget.color.withOpacity(.45), blurRadius: 10)]))]));
+}
+
+class _Vertex extends StatelessWidget { const _Vertex(); @override Widget build(BuildContext context) => Container(decoration: BoxDecoration(color: Colors.white, shape: BoxShape.circle, border: Border.all(color: _blue, width: 4), boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 4)])); }
+class _MapButton extends StatelessWidget { const _MapButton({required this.icon, required this.tooltip, required this.onPressed}); final IconData icon; final String tooltip; final VoidCallback onPressed; @override Widget build(BuildContext context) => _Surface(radius: 16, padding: EdgeInsets.zero, child: IconButton(onPressed: onPressed, tooltip: tooltip, icon: Icon(icon, color: _blue))); }
+class _RoundSurface extends StatelessWidget { const _RoundSurface({required this.icon, required this.onTap}); final IconData icon; final VoidCallback onTap; @override Widget build(BuildContext context) => _Surface(radius: 16, padding: EdgeInsets.zero, child: IconButton(onPressed: onTap, icon: Icon(icon, color: _navy))); }
+class _Surface extends StatelessWidget { const _Surface({required this.child, this.padding = const EdgeInsets.all(12), this.radius = 18}); final Widget child; final EdgeInsets padding; final double radius; @override Widget build(BuildContext context) => Container(padding: padding, decoration: BoxDecoration(color: Colors.white.withOpacity(.96), borderRadius: BorderRadius.circular(radius), border: Border.all(color: const Color(0xFFE5ECF6)), boxShadow: const [BoxShadow(color: Color(0x2410233D), blurRadius: 18, offset: Offset(0, 8))]), child: child); }
