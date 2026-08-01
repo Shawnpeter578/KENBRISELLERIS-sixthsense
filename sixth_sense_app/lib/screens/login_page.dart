@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
-import 'auth_service.dart';
-import 'auth_theme.dart';
+import 'package:sixth_sense_app/screens/home.dart';
+import '../services/auth_service.dart';
+import '../theme/auth_theme.dart';
 import 'signup_page.dart';
 
 class LoginPage extends StatefulWidget {
-  final Widget Function(BuildContext) homeBuilder;
 
-  const LoginPage({super.key, required this.homeBuilder});
+  const LoginPage({super.key});
 
   @override
   State<LoginPage> createState() => _LoginPageState();
@@ -41,9 +41,11 @@ class _LoginPageState extends State<LoginPage> {
         password: _passwordController.text,
       );
       if (!mounted) return;
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: widget.homeBuilder),
-      );
+     Navigator.of(context).pushReplacement(
+  MaterialPageRoute(
+    builder: (_) => Home(),
+  ),
+);
     } on AuthException catch (e) {
       setState(() => _error = e.message);
     } catch (_) {
@@ -158,7 +160,7 @@ class _LoginPageState extends State<LoginPage> {
                         onTap: () {
                           Navigator.of(context).push(
                             MaterialPageRoute(
-                              builder: (_) => SignUpPage(homeBuilder: widget.homeBuilder),
+                              builder: (_) => SignUpPage(),
                             ),
                           );
                         },

@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
-import 'auth_service.dart';
-import 'auth_theme.dart';
+import 'package:sixth_sense_app/screens/home.dart';
+import '../services/auth_service.dart';
+import '../theme/auth_theme.dart';
 
 class SignUpPage extends StatefulWidget {
-  final Widget Function(BuildContext) homeBuilder;
 
-  const SignUpPage({super.key, required this.homeBuilder});
+  const SignUpPage({super.key});
 
   @override
   State<SignUpPage> createState() => _SignUpPageState();
@@ -46,10 +46,12 @@ class _SignUpPageState extends State<SignUpPage> {
         password: _passwordController.text,
       );
       if (!mounted) return;
-      Navigator.of(context).pushAndRemoveUntil(
-        MaterialPageRoute(builder: widget.homeBuilder),
-        (route) => false,
-      );
+     Navigator.of(context).pushAndRemoveUntil(
+  MaterialPageRoute(
+    builder: (_) => Home(),
+  ),
+  (route) => false,
+);
     } on AuthException catch (e) {
       setState(() => _error = e.message);
     } catch (_) {

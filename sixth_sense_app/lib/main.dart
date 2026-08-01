@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
-import 'auth_service.dart';
-import 'auth_theme.dart';
-import 'login_page.dart';
+import 'package:sixth_sense_app/screens/home.dart';
+import 'services/auth_service.dart';
+import 'theme/auth_theme.dart';
+import 'screens/login_page.dart';
 
 void main() {
   runApp(const MyApp());
@@ -55,53 +56,11 @@ class _AuthGateState extends State<AuthGate> {
 
         final user = snapshot.data;
         if (user != null) {
-          return const HomeScreen();
+          return  Home();
         }
-        return LoginPage(homeBuilder: (_) => const HomeScreen());
+        return LoginPage();
       },
     );
   }
 }
 
-/// Placeholder home screen — replace with your actual app screen.
-class HomeScreen extends StatelessWidget {
-  const HomeScreen({super.key});
-
-  Future<void> _logout(BuildContext context) async {
-    await AuthService.logout();
-    if (!context.mounted) return;
-    Navigator.of(context).pushAndRemoveUntil(
-      MaterialPageRoute(
-        builder: (_) => LoginPage(homeBuilder: (_) => const HomeScreen()),
-      ),
-      (route) => false,
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AuthColors.background,
-      appBar: AppBar(
-        backgroundColor: AuthColors.background,
-        elevation: 0,
-        title: const Text(
-          'Home',
-          style: TextStyle(color: AuthColors.textPrimary, fontWeight: FontWeight.w600),
-        ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.logout_rounded, color: AuthColors.textPrimary),
-            onPressed: () => _logout(context),
-          ),
-        ],
-      ),
-      body: const Center(
-        child: Text(
-          "You're logged in.",
-          style: TextStyle(fontSize: 16, color: AuthColors.textSecondary),
-        ),
-      ),
-    );
-  }
-}
