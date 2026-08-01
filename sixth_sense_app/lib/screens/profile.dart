@@ -1,4 +1,7 @@
+import 'package:appwrite/appwrite.dart';
+import 'package:appwrite/models.dart' as models;
 import 'package:flutter/material.dart';
+import 'package:sixth_sense_app/services/appwrite_service.dart';
 
 class AppColors {
   static const bg = Color(0xFFF7F9FC);
@@ -11,29 +14,89 @@ class AppColors {
   static const danger = Color(0xFFE5484D);
 }
 
-/// Pure UI profile screen. Wire up real data later by replacing
-/// the sample fields below (or passing them in via a constructor).
-class ProfileScreen extends StatelessWidget {
+class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
 
-  // TODO: replace with real data from your backend
-  final String name = 'Shawn Peter';
-  final String email = 'shawn@example.com';
-  final bool emailVerified = true;
-  final String phone = '+91 98765 43210';
-  final String joined = 'Jan 2025';
-  final String bio = 'Engineering student. Building things.';
-  final String avatarUrl = '';
+  @override
+  State<ProfileScreen> createState() => _ProfileScreenState();
+}
+
+class _ProfileScreenState extends State<ProfileScreen> {
+  late Future<_ProfileData> _profileFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _profileFuture = _loadProfile();
+  }
+
+  Future<_ProfileData> _loadProfile() async {
+    final user = await AppwriteService.account.get();
+    final row = await AppwriteService.tablesDB.getRow(
+      databaseId: AppwriteService.databaseId,
+      tableId: AppwriteService.userTableId,
+      rowId: user.$id,
+    );
+    return _ProfileData(user: user, values: row.data);
+  }
+
+  Future<void> _reload() async {
+    setState(() => _profileFuture = _loadProfile());
+    await _profileFuture;
+  }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return FutureBuilder<_ProfileData>(
+      future: _profileFuture,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Scaffold(
+            backgroundColor: AppColors.bg,
+            body: Center(child: CircularProgressIndicator(color: AppColors.primary)),
+          );
+        }
+
+        if (snapshot.hasError || !snapshot.hasData) {
+          final error = snapshot.error is AppwriteException
+              ? (snapshot.error as AppwriteException).message
+              : snapshot.error?.toString() ?? 'Profile could not be loaded.';
+          return Scaffold(
+            backgroundColor: AppColors.bg,
+            body: Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.error_outline_rounded, color: AppColors.danger, size: 40),
+                    const SizedBox(height: 12),
+                    Text(error ?? 'Profile could not be loaded.', textAlign: TextAlign.center),
+                    const SizedBox(height: 16),
+                    ElevatedButton(onPressed: _reload, child: const Text('Retry')),
+                  ],
+                ),
+              ),
+            ),
+          );
+        }
+
+        final profile = snapshot.data!;
+        final name = _value(profile.values['name'], profile.user.name, 'Unnamed User');
+        final email = _value(profile.values['email'], profile.user.email, 'No email');
+        final emailVerified = profile.user.emailVerification;
+        final phone = _value(profile.values['phone'], '', 'Not provided');
+        final bio = _value(profile.values['bio'], '', 'No bio added yet.');
+        final avatarUrl = _value(profile.values['avatarUrl'], '', '');
+        final joined = profile.user.$createdAt.length >= 10
+            ? profile.user.$createdAt.substring(0, 10)
+            : profile.user.$createdAt;
+
+        return Scaffold(
       backgroundColor: AppColors.bg,
       body: RefreshIndicator(
         color: AppColors.primary,
-        onRefresh: () async {
-          // TODO: hook up real refresh logic
-        },
+        onRefresh: _reload,
         child: CustomScrollView(
           physics: const AlwaysScrollableScrollPhysics(),
           slivers: [
@@ -124,8 +187,22 @@ class ProfileScreen extends StatelessWidget {
           ],
         ),
       ),
+        );
+      },
     );
   }
+
+  String _value(dynamic value, String fallback, String emptyValue) {
+    final text = value?.toString().trim() ?? '';
+    return text.isNotEmpty ? text : (fallback.isNotEmpty ? fallback : emptyValue);
+  }
+}
+
+class _ProfileData {
+  const _ProfileData({required this.user, required this.values});
+
+  final models.User user;
+  final Map<String, dynamic> values;
 }
 
 class _Header extends StatelessWidget {

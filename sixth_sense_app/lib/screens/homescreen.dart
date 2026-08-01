@@ -20,13 +20,18 @@ class AppColors {
   static const cardShadow = Color(0x0F1B2A57);
 }
 
-
-
-
+/// Small typed result so the UI can distinguish "not logged in",
+/// "row missing", and "other error" instead of one blank screen.
+class _UserLoadResult {
+  final Map<String, dynamic>? data;
+  final String? errorMessage;
+  _UserLoadResult.success(this.data) : errorMessage = null;
+  _UserLoadResult.failure(this.errorMessage) : data = null;
+}
 
 class CaneDashboardScreen extends StatefulWidget {
   const CaneDashboardScreen({super.key});
-  
+
   @override
   State<CaneDashboardScreen> createState() => _CaneDashboardScreenState();
 
@@ -40,80 +45,139 @@ class CaneDashboardScreen extends StatefulWidget {
 }
 
 class _CaneDashboardScreenState extends State<CaneDashboardScreen> {
-  late Future<Map<String, dynamic>?> userFuture;
+  late Future<_UserLoadResult> userFuture;
 
-  Future<Map<String, dynamic>?> getCurrentUserData() async {
-  try {
-    final authUser = await AppwriteService.account.get();
+  Future<_UserLoadResult> _getCurrentUserData() async {
+    try {
+      final authUser = await AppwriteService.account.get();
 
-    final result = await AppwriteService.tablesDB.listRows(
-      databaseId: AppwriteService.databaseId,
-      tableId: AppwriteService.userTableId,
-      queries: [
-        Query.equal("userId", authUser.$id),
-      ],
-    );
+      final profile = await AppwriteService.tablesDB.getRow(
+        databaseId: AppwriteService.databaseId,
+        tableId: AppwriteService.userTableId,
+        rowId: authUser.$id,
+      );
 
-    if (result.rows.isEmpty) return null;
-
-    return result.rows.first.data;
-  } catch (e) {
-    print(e);
-    return null;
+      // ignore: avoid_print
+      print('Loaded profile row for auth user: ${authUser.$id}');
+      return _UserLoadResult.success(profile.data);
+    } on AppwriteException catch (e) {
+      // Surfaces the real Appwrite error: 401 = not logged in / bad
+      // session or missing scope, 404 = wrong databaseId/tableId.
+      return _UserLoadResult.failure('Appwrite error ${e.code}: ${e.message}');
+    } catch (e) {
+      return _UserLoadResult.failure('Unexpected error: $e');
+    }
   }
-}
+
+  void _reload() {
+    setState(() {
+      userFuture = _getCurrentUserData();
+    });
+  }
 
   @override
   void initState() {
-    // TODO: implement initState
-    
     super.initState();
-    userFuture = getCurrentUserData();
+    userFuture = _getCurrentUserData();
   }
+
   @override
   Widget build(BuildContext context) {
-   
-   
+    return FutureBuilder<_UserLoadResult>(
+      future: userFuture,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Scaffold(
+            backgroundColor: AppColors.bg,
+            body: Center(child: CircularProgressIndicator(color: AppColors.primaryBlue)),
+          );
+        }
 
+        final result = snapshot.data;
 
+        if (snapshot.hasError || result == null || result.errorMessage != null) {
+          final message = snapshot.hasError
+              ? snapshot.error.toString()
+              : (result?.errorMessage ?? 'Unknown error');
+          return Scaffold(
+            backgroundColor: AppColors.bg,
+            body: Center(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 28),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.error_outline_rounded, color: AppColors.alertText, size: 40),
+                    const SizedBox(height: 14),
+                    Text(
+                      message,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(color: AppColors.textDark, fontSize: 13.5),
+                    ),
+                    const SizedBox(height: 18),
+                    ElevatedButton(
+                      onPressed: _reload,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.primaryBlue,
+                        foregroundColor: Colors.white,
+                      ),
+                      child: const Text('Retry'),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        }
 
+        final user = result.data!;
 
-    return Scaffold(
-      backgroundColor: AppColors.bg,
-      body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _buildHeader(),
-              const SizedBox(height: 24),
-              _buildConnectionCard(),
-              const SizedBox(height: 26),
-              _sectionLabel('Live detection'),
-              _buildStatRow(),
-              const SizedBox(height: 26),
-              _sectionLabel('Location'),
-              _buildLocationCard(),
-              const SizedBox(height: 26),
-              _buildAlertsCard(),
-              const SizedBox(height: 16),
-            ],
+        return Scaffold(
+          backgroundColor: AppColors.bg,
+          body: SafeArea(
+            child: RefreshIndicator(
+              color: AppColors.primaryBlue,
+              onRefresh: () async {
+                _reload();
+                await userFuture;
+              },
+              child: SingleChildScrollView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildHeader(user),
+                    const SizedBox(height: 24),
+                    _buildConnectionCard(user),
+                    const SizedBox(height: 26),
+                    _sectionLabel('Live detection'),
+                    _buildStatRow(user),
+                    const SizedBox(height: 26),
+                    _sectionLabel('Location'),
+                    _buildLocationCard(user),
+                    const SizedBox(height: 26),
+                    _buildAlertsCard(),
+                    const SizedBox(height: 16),
+                  ],
+                ),
+              ),
+            ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 
-  Widget _buildHeader() {
+  Widget _buildHeader(Map<String, dynamic> user) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         Column(
           crossAxisAlignment: CrossAxisAlignment.start,
-          children: const [
-            Text(
+          children: [
+            const Text(
               'Good morning',
               style: TextStyle(
                 fontSize: 13,
@@ -122,10 +186,10 @@ class _CaneDashboardScreenState extends State<CaneDashboardScreen> {
                 letterSpacing: 0.1,
               ),
             ),
-            SizedBox(height: 3),
+            const SizedBox(height: 3),
             Text(
-              'Sixth Sense',
-              style: TextStyle(
+              (user['name'] as String?)?.trim().isNotEmpty == true ? user['name'] : 'User',
+              style: const TextStyle(
                 fontSize: 22,
                 fontWeight: FontWeight.w700,
                 color: AppColors.textDark,
@@ -158,15 +222,22 @@ class _CaneDashboardScreenState extends State<CaneDashboardScreen> {
     );
   }
 
-  Widget _buildConnectionCard() {
+  Widget _buildConnectionCard(Map<String, dynamic> user) {
+    final bool connected = user['caneConnected'] ?? true;
+    final int batteryPct = (user['batteryLevel'] is int) ? user['batteryLevel'] : 82;
+    final double batteryFraction = batteryPct / 100;
+    final String signal = user['signalStrength'] ?? 'Strong';
+
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(22),
       decoration: BoxDecoration(
-        gradient: const LinearGradient(
+        gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [AppColors.primaryBlue, AppColors.deepBlue],
+          colors: connected
+              ? [AppColors.primaryBlue, AppColors.deepBlue]
+              : [AppColors.textMuted, AppColors.textDark],
         ),
         borderRadius: BorderRadius.circular(24),
         boxShadow: [
@@ -186,11 +257,12 @@ class _CaneDashboardScreenState extends State<CaneDashboardScreen> {
                 width: 8,
                 height: 8,
                 decoration: BoxDecoration(
-                  color: const Color(0xFF6FE39A),
+                  color: connected ? const Color(0xFF6FE39A) : const Color(0xFFE0855E),
                   shape: BoxShape.circle,
                   boxShadow: [
                     BoxShadow(
-                      color: const Color(0xFF6FE39A).withOpacity(0.6),
+                      color: (connected ? const Color(0xFF6FE39A) : const Color(0xFFE0855E))
+                          .withOpacity(0.6),
                       blurRadius: 6,
                       spreadRadius: 1,
                     ),
@@ -199,7 +271,7 @@ class _CaneDashboardScreenState extends State<CaneDashboardScreen> {
               ),
               const SizedBox(width: 8),
               Text(
-                'Cane connected',
+                connected ? 'Cane connected' : 'Cane disconnected',
                 style: TextStyle(
                   color: Colors.white.withOpacity(0.95),
                   fontWeight: FontWeight.w600,
@@ -215,15 +287,15 @@ class _CaneDashboardScreenState extends State<CaneDashboardScreen> {
           Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              _batteryRing(0.82),
+              _batteryRing(batteryFraction),
               const SizedBox(width: 18),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
-                      '82%',
-                      style: TextStyle(
+                    Text(
+                      '$batteryPct%',
+                      style: const TextStyle(
                         color: Colors.white,
                         fontSize: 26,
                         fontWeight: FontWeight.w700,
@@ -233,7 +305,7 @@ class _CaneDashboardScreenState extends State<CaneDashboardScreen> {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      'Battery · ~6 hrs left',
+                      'Battery · ~${(batteryPct / 14).round()} hrs left',
                       style: TextStyle(
                         color: Colors.white.withOpacity(0.75),
                         fontSize: 12.5,
@@ -242,7 +314,7 @@ class _CaneDashboardScreenState extends State<CaneDashboardScreen> {
                   ],
                 ),
               ),
-              _signalPill(),
+              _signalPill(signal),
             ],
           ),
         ],
@@ -261,7 +333,7 @@ class _CaneDashboardScreenState extends State<CaneDashboardScreen> {
             width: 46,
             height: 46,
             child: CircularProgressIndicator(
-              value: value,
+              value: value.clamp(0.0, 1.0),
               strokeWidth: 4,
               backgroundColor: Colors.white.withOpacity(0.2),
               valueColor: const AlwaysStoppedAnimation(Colors.white),
@@ -273,7 +345,7 @@ class _CaneDashboardScreenState extends State<CaneDashboardScreen> {
     );
   }
 
-  Widget _signalPill() {
+  Widget _signalPill(String label) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
       decoration: BoxDecoration(
@@ -282,12 +354,12 @@ class _CaneDashboardScreenState extends State<CaneDashboardScreen> {
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
-        children: const [
-          Icon(Icons.wifi_rounded, color: Colors.white, size: 15),
-          SizedBox(width: 5),
+        children: [
+          const Icon(Icons.wifi_rounded, color: Colors.white, size: 15),
+          const SizedBox(width: 5),
           Text(
-            'Strong',
-            style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600),
+            label,
+            style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600),
           ),
         ],
       ),
@@ -309,18 +381,21 @@ class _CaneDashboardScreenState extends State<CaneDashboardScreen> {
     );
   }
 
-  Widget _buildStatRow() {
+  Widget _buildStatRow(Map<String, dynamic> user) {
+    final int objects = (user['objectsDetected'] is int) ? user['objectsDetected'] : 3;
+    final String closest =
+        (user['closestObstacleM'] != null) ? user['closestObstacleM'].toString() : '0.8';
+
     return Row(
       children: [
         Expanded(
           child: _featureCard(
             icon: Icons.blur_on_rounded,
             iconBg: AppColors.iceBlue,
-            title: '3',
+            title: '$objects',
             unit: 'objects',
             subtitle: 'Detected nearby',
             trend: '+1 vs last min',
-            trendUp: true,
           ),
         ),
         const SizedBox(width: 14),
@@ -328,11 +403,10 @@ class _CaneDashboardScreenState extends State<CaneDashboardScreen> {
           child: _featureCard(
             icon: Icons.social_distance_rounded,
             iconBg: AppColors.softBlue,
-            title: '0.8',
+            title: closest,
             unit: 'm',
             subtitle: 'Closest obstacle',
             trend: 'Front-left',
-            trendUp: false,
           ),
         ),
       ],
@@ -346,7 +420,6 @@ class _CaneDashboardScreenState extends State<CaneDashboardScreen> {
     required String unit,
     required String subtitle,
     required String trend,
-    required bool trendUp,
   }) {
     return Container(
       padding: const EdgeInsets.all(18),
@@ -358,19 +431,14 @@ class _CaneDashboardScreenState extends State<CaneDashboardScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Container(
-                width: 36,
-                height: 36,
-                decoration: BoxDecoration(
-                  color: iconBg,
-                  borderRadius: BorderRadius.circular(11),
-                ),
-                child: Icon(icon, size: 18, color: AppColors.primaryBlue),
-              ),
-            ],
+          Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              color: iconBg,
+              borderRadius: BorderRadius.circular(11),
+            ),
+            child: Icon(icon, size: 18, color: AppColors.primaryBlue),
           ),
           const SizedBox(height: 16),
           RichText(
@@ -419,7 +487,11 @@ class _CaneDashboardScreenState extends State<CaneDashboardScreen> {
     );
   }
 
-  Widget _buildLocationCard() {
+  Widget _buildLocationCard(Map<String, dynamic> user) {
+    final String location = (user['lastKnownLocation'] as String?)?.trim().isNotEmpty == true
+        ? user['lastKnownLocation']
+        : 'Kadri Hills, Mangalore';
+
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(18),
@@ -443,8 +515,8 @@ class _CaneDashboardScreenState extends State<CaneDashboardScreen> {
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
-              children: const [
-                Text(
+              children: [
+                const Text(
                   'Current Location',
                   style: TextStyle(
                     fontSize: 12,
@@ -452,10 +524,10 @@ class _CaneDashboardScreenState extends State<CaneDashboardScreen> {
                     fontWeight: FontWeight.w500,
                   ),
                 ),
-                SizedBox(height: 3),
+                const SizedBox(height: 3),
                 Text(
-                  'Kadri Hills, Mangalore',
-                  style: TextStyle(
+                  location,
+                  style: const TextStyle(
                     fontSize: 15,
                     fontWeight: FontWeight.w600,
                     color: AppColors.textDark,
@@ -528,8 +600,8 @@ class _CaneDashboardScreenState extends State<CaneDashboardScreen> {
             time: '2 min ago',
             isDanger: true,
           ),
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 12),
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 12),
             child: Divider(color: AppColors.bg, height: 1),
           ),
           _alertRow(
@@ -538,8 +610,8 @@ class _CaneDashboardScreenState extends State<CaneDashboardScreen> {
             time: '1 hr ago',
             isDanger: false,
           ),
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 12),
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 12),
             child: Divider(color: AppColors.bg, height: 1),
           ),
           _alertRow(

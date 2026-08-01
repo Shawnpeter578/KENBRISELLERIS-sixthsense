@@ -1,10 +1,11 @@
+import 'package:appwrite/appwrite.dart';
 import 'package:flutter/material.dart';
 import 'package:sixth_sense_app/screens/home.dart';
+import 'package:sixth_sense_app/services/appwrite_service.dart';
 import '../services/auth_service.dart';
 import '../theme/auth_theme.dart';
 
 class SignUpPage extends StatefulWidget {
-
   const SignUpPage({super.key});
 
   @override
@@ -32,6 +33,29 @@ class _SignUpPageState extends State<SignUpPage> {
     super.dispose();
   }
 
+  /// Creates the only profile row for this account, keyed by its auth ID.
+  Future<void> _createUserRow(String userId) async {
+    await AppwriteService.tablesDB.createRow(
+      databaseId: AppwriteService.databaseId,
+      tableId: AppwriteService.userTableId,
+      rowId: userId,
+      data: {
+        "name": _nameController.text.trim(),
+        "email": _emailController.text.trim(),
+      },
+      // Without this, if the table has document security enabled, the row
+      // is created with no read/update/delete permission for the very
+      // user it belongs to — later listRows() queries return 0 rows even
+      // though the row exists. This is almost certainly why profile data
+      // wasn't loading on the dashboard.
+      permissions: [
+        Permission.read(Role.user(userId)),
+        Permission.update(Role.user(userId)),
+        Permission.delete(Role.user(userId)),
+      ],
+    );
+  }
+
   Future<void> _handleSignUp() async {
     if (!_formKey.currentState!.validate()) return;
     setState(() {
@@ -40,18 +64,39 @@ class _SignUpPageState extends State<SignUpPage> {
     });
 
     try {
-      await AuthService.signUp(
+      final user = await AuthService.signUp(
         name: _nameController.text.trim(),
         email: _emailController.text.trim(),
         password: _passwordController.text,
       );
+
+      try {
+        await _createUserRow(user.$id);
+      } on AppwriteException catch (e) {
+        // Show the exact Appwrite error while debugging. Common causes:
+        // 401/authorization -> collection missing "create" permission for
+        // role:users (this is a COLLECTION-level setting, separate from
+        // the per-document permissions passed above); 404 -> wrong
+        // databaseId/tableId; 400 -> a required attribute is missing or
+        // has the wrong type for your table's schema.
+        // ignore: avoid_print
+        print('Profile row creation failed for ${user.$id}: ${e.code} ${e.message}');
+        if (!mounted) return;
+        setState(() {
+          _error = 'Profile row failed: [${e.code}] ${e.message}';
+          _loading = false;
+        });
+        // Still proceed to Home — AuthService/session is valid; the
+        // dashboard's own retry flow can recreate/reload the row.
+        // Do not open Home without its required profile row.
+        return;
+      }
+
       if (!mounted) return;
-     Navigator.of(context).pushAndRemoveUntil(
-  MaterialPageRoute(
-    builder: (_) => Home(),
-  ),
-  (route) => false,
-);
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => Home()),
+        (route) => false,
+      );
     } on AuthException catch (e) {
       setState(() => _error = e.message);
     } catch (_) {
@@ -88,8 +133,7 @@ class _SignUpPageState extends State<SignUpPage> {
                       color: AuthColors.primary,
                       borderRadius: BorderRadius.circular(16),
                     ),
-                    child: const Icon(Icons.person_add_alt_1_rounded,
-                        color: Colors.white, size: 28),
+                    child: const Icon(Icons.person_add_alt_1_rounded, color: Colors.white, size: 28),
                   ),
                   const SizedBox(height: 24),
                   const Text(
