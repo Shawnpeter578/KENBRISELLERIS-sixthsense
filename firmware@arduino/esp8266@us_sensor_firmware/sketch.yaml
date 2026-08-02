@@ -4,5 +4,7 @@ profiles:
     fqbn: esp8266:esp8266:nodemcuv2
     platforms:
       - platform: esp8266:esp8266
+    libraries:
+      - ArduinoJson (6.21.3)
     source_paths:
       - src

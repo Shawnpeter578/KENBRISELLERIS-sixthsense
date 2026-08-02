@@ -1,0 +1,261 @@
+---
+import Layout from '../layouts/Layout.astro';
+---
+
+<Layout>
+  <main class="dashboard-container">
+    <header class="header">
+      <div class="logo-area">
+        <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-radar"><path d="M19.07 4.93A10 10 0 0 0 6.99 3.34"/><path d="M4 6h.01"/><path d="M2.29 9.62A10 10 0 1 0 21.31 8.35"/><path d="M16.24 7.76A6 6 0 1 0 8.25 16.23"/><path d="M6 18h.01"/><path d="M22.5 10.5h.01"/><path d="M12 12v.01"/><path d="M12 12a2 2 0 1 0-2-2 2 2 0 0 0 2 2Z"/></svg>
+        <h1>Smart Stick Telemetry</h1>
+      </div>
+      <p class="subtitle">Live Edge-Device Sensor Analytics</p>
+    </header>
+    
+    <section class="connect-panel">
+      <div class="input-group">
+        <input type="text" id="uuid-input" placeholder="Enter Device UUID (e.g., user123)" autocomplete="off" />
+        <button id="connect-btn">Connect Device</button>
+      </div>
+      <p id="error-msg" class="error-message"></p>
+    </section>
+
+    <section id="dashboard" class="dashboard-grid" style="display: none;">
+      
+      <!-- Analytics Panel -->
+      <div class="card analytics-card">
+        <h2>AI Inference Status</h2>
+        <div id="status-indicator" class="status-badge safe">
+          <span id="status-text">CLEAR PATH</span>
+        </div>
+        <div class="analytics-details">
+          <div class="metric">
+            <span class="label">Closest Obstacle</span>
+            <span class="value"><span id="min-dist">--</span> cm</span>
+          </div>
+          <div class="metric">
+            <span class="label">Average Distance</span>
+            <span class="value"><span id="avg-dist">--</span> cm</span>
+          </div>
+        </div>
+        
+        <h3 class="log-title">Live Telemetry Log</h3>
+        <div class="history-log" id="history-log">
+          <!-- Populated by JS -->
+        </div>
+      </div>
+
+      <!-- Raw Sensor Feeds -->
+      <div class="card sensors-card">
+        <div class="card-header">
+          <h2>Live Sensor Array</h2>
+          <span class="live-dot"></span>
+        </div>
+        
+        <div class="sensor-bar-container">
+          <div class="sensor-label">
+            <span>Sensor 1 (Left)</span>
+            <span class="sensor-val"><span id="s1-val">--</span> cm</span>
+          </div>
+          <div class="progress-bg"><div id="s1-bar" class="progress-fill"></div></div>
+        </div>
+
+        <div class="sensor-bar-container">
+          <div class="sensor-label">
+            <span>Sensor 2 (Center)</span>
+            <span class="sensor-val"><span id="s2-val">--</span> cm</span>
+          </div>
+          <div class="progress-bg"><div id="s2-bar" class="progress-fill"></div></div>
+        </div>
+
+        <div class="sensor-bar-container">
+          <div class="sensor-label">
+            <span>Sensor 3 (Right)</span>
+            <span class="sensor-val"><span id="s3-val">--</span> cm</span>
+          </div>
+          <div class="progress-bg"><div id="s3-bar" class="progress-fill"></div></div>
+        </div>
+
+        <p class="timestamp">Last sync: <span id="timestamp">--</span></p>
+      </div>
+
+    </section>
+  </main>
+
+  <style>
+    :root {
+      --bg-color: #ecfdf5; 
+      --text-main: #064e3b;
+      --text-muted: #047857;
+      --primary: #10b981; 
+      --primary-hover: #059669;
+      --card-bg: #ffffff;
+      --status-safe: #10b981;
+      --status-warn: #f59e0b;
+      --status-danger: #ef4444;
+    }
+
+    body {
+      background-color: var(--bg-color);
+      color: var(--text-main);
+      font-family: 'Inter', system-ui, -apple-system, sans-serif;
+      margin: 0;
+      padding: 0;
+    }
+
+    .dashboard-container {
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 3rem 1.5rem;
+    }
+
+    .header { text-align: center; margin-bottom: 3rem; }
+    .logo-area { display: flex; align-items: center; justify-content: center; gap: 12px; color: var(--primary); margin-bottom: 0.5rem; }
+    h1 { margin: 0; font-size: 2.2rem; font-weight: 800; letter-spacing: -0.5px; }
+    .subtitle { margin: 0; color: var(--text-muted); font-size: 1.1rem; }
+
+    .connect-panel { display: flex; flex-direction: column; align-items: center; margin-bottom: 3rem; }
+    .input-group { display: flex; gap: 10px; width: 100%; max-width: 500px; box-shadow: 0 10px 25px -5px rgba(16, 185, 129, 0.15); border-radius: 12px; overflow: hidden; background: white; padding: 6px; }
+    input { flex: 1; border: none; padding: 14px 20px; font-size: 1rem; outline: none; background: transparent; color: var(--text-main); }
+    button { background: var(--primary); color: white; border: none; padding: 0 24px; border-radius: 8px; font-weight: 600; cursor: pointer; transition: background 0.2s ease; }
+    button:hover { background: var(--primary-hover); }
+    .error-message { color: var(--status-danger); font-size: 0.9rem; margin-top: 1rem; font-weight: 500; min-height: 20px; }
+
+    .dashboard-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; }
+    @media (max-width: 768px) { .dashboard-grid { grid-template-columns: 1fr; } }
+
+    .card { background: var(--card-bg); border-radius: 16px; padding: 24px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05); border: 1px solid rgba(16, 185, 129, 0.1); }
+    .card h2 { margin-top: 0; font-size: 1.2rem; color: var(--text-muted); border-bottom: 1px solid #f1f5f9; padding-bottom: 12px; margin-bottom: 20px; }
+
+    .status-badge { display: flex; align-items: center; justify-content: center; padding: 20px; border-radius: 12px; font-size: 1.5rem; font-weight: 800; color: white; margin-bottom: 24px; transition: background-color 0.3s ease; }
+    .status-badge.safe { background: var(--status-safe); box-shadow: 0 4px 14px rgba(16, 185, 129, 0.3); }
+    .status-badge.warn { background: var(--status-warn); box-shadow: 0 4px 14px rgba(245, 158, 11, 0.3); }
+    .status-badge.danger { background: var(--status-danger); box-shadow: 0 4px 14px rgba(239, 68, 68, 0.3); }
+
+    .analytics-details { display: flex; justify-content: space-between; gap: 12px; margin-bottom: 24px; }
+    .metric { background: #f8fafc; padding: 16px; border-radius: 12px; flex: 1; text-align: center; }
+    .metric .label { display: block; font-size: 0.8rem; text-transform: uppercase; color: #64748b; margin-bottom: 8px; }
+    .metric .value { font-size: 1.4rem; font-weight: 700; color: var(--text-main); }
+
+    .log-title { font-size: 0.9rem; color: #64748b; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 0.5px; }
+    .history-log { max-height: 150px; overflow-y: auto; background: #f8fafc; padding: 12px; border-radius: 8px; font-family: ui-monospace, monospace; font-size: 0.8rem; color: #475569; }
+    .history-log::-webkit-scrollbar { width: 6px; }
+    .history-log::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+    .log-entry { display: flex; justify-content: space-between; border-bottom: 1px solid #e2e8f0; padding: 6px 0; }
+    .log-entry:last-child { border-bottom: none; }
+    .log-entry .vals { font-weight: 600; color: var(--primary); }
+
+    .card-header { display: flex; justify-content: space-between; align-items: center; }
+    .live-dot { width: 10px; height: 10px; background-color: var(--status-safe); border-radius: 50%; animation: pulse 1.5s infinite; margin-bottom: 8px; }
+    @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); } 70% { box-shadow: 0 0 0 10px rgba(16, 185, 129, 0); } 100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); } }
+
+    .sensor-bar-container { margin-bottom: 20px; }
+    .sensor-label { display: flex; justify-content: space-between; font-size: 0.95rem; font-weight: 500; margin-bottom: 8px; }
+    .sensor-val { font-weight: 700; color: var(--primary); }
+    .progress-bg { background: #e2e8f0; height: 12px; border-radius: 6px; overflow: hidden; }
+    .progress-fill { height: 100%; background: var(--primary); width: 0%; border-radius: 6px; transition: width 0.3s ease, background-color 0.3s ease; }
+    .timestamp { font-size: 0.8rem; color: #94a3b8; text-align: right; margin: 16px 0 0 0; }
+  </style>
+
+  <script>
+    let pollInterval;
+    const MAX_SENSOR_DISTANCE = 400; // cm
+
+    document.getElementById('connect-btn').addEventListener('click', () => {
+      const uuid = document.getElementById('uuid-input').value.trim();
+      if (!uuid) return;
+
+      document.getElementById('dashboard').style.display = 'grid';
+      document.getElementById('error-msg').innerText = '';
+      
+      if (pollInterval) clearInterval(pollInterval);
+
+      fetchData(uuid);
+      // Increased polling speed to 500ms
+      pollInterval = setInterval(() => fetchData(uuid), 500); 
+    });
+
+    async function fetchData(uuid) {
+      try {
+        const response = await fetch(`/api/telemetry?uuid=${uuid}`);
+        const historyData = await response.json();
+
+        if (!response.ok) throw new Error(historyData.error || 'Failed to fetch data');
+
+        updateDashboard(historyData);
+      } catch (err) {
+        document.getElementById('error-msg').innerText = err.message;
+      }
+    }
+
+    function updateDashboard(historyData) {
+      // Get the most recent reading for the live gauges
+      const latestData = historyData[historyData.length - 1];
+      
+      const s1 = latestData.s1_distance;
+      const s2 = latestData.s2_distance;
+      const s3 = latestData.s3_distance;
+
+      // Update Live Values
+      document.getElementById('s1-val').innerText = s1;
+      document.getElementById('s2-val').innerText = s2;
+      document.getElementById('s3-val').innerText = s3;
+      document.getElementById('timestamp').innerText = new Date(latestData.timestamp).toLocaleTimeString();
+      document.getElementById('error-msg').innerText = '';
+
+      updateBar('s1-bar', s1);
+      updateBar('s2-bar', s2);
+      updateBar('s3-bar', s3);
+
+      // Inference Logic
+      const minDistance = Math.min(s1, s2, s3);
+      const avgDistance = Math.round((s1 + s2 + s3) / 3);
+      
+      document.getElementById('min-dist').innerText = minDistance;
+      document.getElementById('avg-dist').innerText = avgDistance;
+
+      const statusBadge = document.getElementById('status-indicator');
+      const statusText = document.getElementById('status-text');
+
+      statusBadge.className = 'status-badge'; 
+      
+      if (minDistance < 30) {
+        statusBadge.classList.add('danger');
+        statusText.innerText = "🛑 OBSTACLE IMMINENT";
+      } else if (avgDistance < 60 || minDistance < 60) {
+        statusBadge.classList.add('warn');
+        statusText.innerText = "⚠️ NARROW PASSAGE";
+      } else {
+        statusBadge.classList.add('safe');
+        statusText.innerText = "✅ CLEAR PATH";
+      }
+
+      // Update History Log
+      const logContainer = document.getElementById('history-log');
+      logContainer.innerHTML = ''; 
+      
+      // Reverse array to show newest at the top
+      [...historyData].reverse().forEach(entry => {
+        const time = new Date(entry.timestamp).toLocaleTimeString([], { hour12: false, fractionalSecondDigits: 1 });
+        const div = document.createElement('div');
+        div.className = 'log-entry';
+        div.innerHTML = `<span>[${time}]</span> <span class="vals">${entry.s1_distance} | ${entry.s2_distance} | ${entry.s3_distance}</span>`;
+        logContainer.appendChild(div);
+      });
+    }
+
+    function updateBar(barId, value) {
+      const bar = document.getElementById(barId);
+      const percentage = Math.min((value / MAX_SENSOR_DISTANCE) * 100, 100);
+      bar.style.width = `${percentage}%`;
+
+      if (value < 30) {
+        bar.style.backgroundColor = 'var(--status-danger)';
+      } else if (value < 60) {
+        bar.style.backgroundColor = 'var(--status-warn)';
+      } else {
+        bar.style.backgroundColor = 'var(--status-safe)';
+      }
+    }
+  </script>
+</Layout>
